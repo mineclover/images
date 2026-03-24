@@ -9,9 +9,7 @@ export BUILDKIT_PROGRESS=plain
 docker rmi -f selenoid/vnc:$TAG browsers/base:$BASE_TAG $(docker images -q selenoid/dev_chromium:*)
 rm -rf ../selenoid-container-tests
 
-# Prepare for building images
-go install github.com/markbates/pkger/cmd/pkger@latest
-go generate github.com/aerokube/images
+# Build images CLI
 go build
 
 # Forked tests with a bugfix

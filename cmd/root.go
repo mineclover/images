@@ -1,7 +1,7 @@
 package cmd
 
 import (
-	"github.com/aerokube/images/build"
+	"github.com/mineclover/images/build"
 	"github.com/spf13/cobra"
 	"log"
 	"os"

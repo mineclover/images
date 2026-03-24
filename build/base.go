@@ -2,10 +2,11 @@ package build
 
 import (
 	"context"
+	"embed"
 	"errors"
 	"fmt"
-	"github.com/markbates/pkger"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -14,11 +15,13 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
 )
+
+//go:embed all:static
+var staticFS embed.FS
 
 const (
 	LatestVersion = "latest"
@@ -139,28 +142,28 @@ func tmpDir() (string, error) {
 
 func copySourceFiles(srcDir string, destDir string) (string, error) {
 
-	const prefix = "/static"
-	walkDir := filepath.Join(prefix, srcDir)
-	err := pkger.Walk(walkDir, func(path string, info os.FileInfo, err error) error {
+	walkDir := path.Join("static", srcDir)
+	err := fs.WalkDir(staticFS, walkDir, func(p string, d fs.DirEntry, err error) error {
 
 		if err != nil {
 			return err
 		}
 
-		regex := regexp.MustCompile(`^.+:/static(.+)$`)
-		relativePath := regex.FindStringSubmatch(path)[1]
+		relativePath := strings.TrimPrefix(p, "static")
 		outputPath := filepath.Join(destDir, relativePath)
-		if info.IsDir() {
-			return os.MkdirAll(outputPath, info.Mode())
+		if d.IsDir() {
+			return os.MkdirAll(outputPath, 0755)
 		}
 
-		fileDir := filepath.Join(destDir, filepath.Dir(relativePath))
+		fileDir := filepath.Dir(outputPath)
 		if !fileExists(fileDir) {
 			log.Printf("mkdir dir %s", fileDir)
-			return os.MkdirAll(fileDir, info.Mode())
+			if err := os.MkdirAll(fileDir, 0755); err != nil {
+				return err
+			}
 		}
 
-		src, err := pkger.Open(path)
+		src, err := staticFS.Open(p)
 		if err != nil {
 			return err
 		}
@@ -182,7 +185,7 @@ func copySourceFiles(srcDir string, destDir string) (string, error) {
 			return err
 		}
 
-		err = os.Chmod(outputPath, info.Mode())
+		err = os.Chmod(outputPath, 0755)
 		if err != nil {
 			return err
 		}

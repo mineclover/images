@@ -3,7 +3,6 @@
 *.deb
 *.bak
 images
-pkged.go
 
 .DS_Store
 
