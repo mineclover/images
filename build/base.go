@@ -197,7 +197,125 @@ func copySourceFiles(srcDir string, destDir string) (string, error) {
 		return "", err
 	}
 
-	return filepath.Join(destDir, srcDir), nil
+	outputDir := filepath.Join(destDir, srcDir)
+	if err := copySupplementalSourceDirs(srcDir, outputDir); err != nil {
+		return "", err
+	}
+
+	return outputDir, nil
+}
+
+var supplementalSourceDirs = map[string][]string{
+	"chrome": {"devtools"},
+	"safari": {"cmd/prism"},
+}
+
+func copySupplementalSourceDirs(srcDir string, outputDir string) error {
+	sourcePaths, ok := supplementalSourceDirs[srcDir]
+	if !ok {
+		return nil
+	}
+
+	for _, sourcePath := range sourcePaths {
+		outputPath := filepath.Join(outputDir, filepath.FromSlash(sourcePath))
+		if fileExists(filepath.Join(outputPath, "go.mod")) {
+			continue
+		}
+
+		sourceDir, err := findSupplementalSourceDir(srcDir, sourcePath)
+		if err != nil {
+			return err
+		}
+
+		if err := copyLocalDir(sourceDir, outputPath); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func findSupplementalSourceDir(srcDir string, sourcePath string) (string, error) {
+	var candidates []string
+	if sourceRoot := os.Getenv("SELENOID_IMAGES_SOURCE_DIR"); sourceRoot != "" {
+		candidates = append(candidates,
+			filepath.Join(sourceRoot, "build", "static", srcDir, filepath.FromSlash(sourcePath)),
+			filepath.Join(sourceRoot, "static", srcDir, filepath.FromSlash(sourcePath)),
+			filepath.Join(sourceRoot, srcDir, filepath.FromSlash(sourcePath)),
+		)
+	}
+
+	if _, file, _, ok := runtime.Caller(0); ok {
+		buildDir := filepath.Dir(file)
+		candidates = append(candidates,
+			filepath.Join(buildDir, "static", srcDir, filepath.FromSlash(sourcePath)),
+			filepath.Join(filepath.Dir(buildDir), "build", "static", srcDir, filepath.FromSlash(sourcePath)),
+		)
+	}
+
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, "build", "static", srcDir, filepath.FromSlash(sourcePath)),
+			filepath.Join(cwd, "static", srcDir, filepath.FromSlash(sourcePath)),
+			filepath.Join(cwd, srcDir, filepath.FromSlash(sourcePath)),
+		)
+	}
+
+	seen := make(map[string]struct{})
+	for _, candidate := range candidates {
+		cleaned := filepath.Clean(candidate)
+		if _, ok := seen[cleaned]; ok {
+			continue
+		}
+		seen[cleaned] = struct{}{}
+		if fileExists(filepath.Join(cleaned, "go.mod")) {
+			return cleaned, nil
+		}
+	}
+
+	return "", fmt.Errorf("%s/%s sources are required but were not embedded; set SELENOID_IMAGES_SOURCE_DIR to the images repository root", srcDir, sourcePath)
+}
+
+func copyLocalDir(sourceDir string, destDir string) error {
+	return filepath.WalkDir(sourceDir, func(sourcePath string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(sourceDir, sourcePath)
+		if err != nil {
+			return err
+		}
+		destPath := filepath.Join(destDir, relPath)
+
+		if d.IsDir() {
+			return os.MkdirAll(destPath, 0755)
+		}
+
+		if err := os.MkdirAll(filepath.Dir(destPath), 0755); err != nil {
+			return err
+		}
+
+		source, err := os.Open(sourcePath)
+		if err != nil {
+			return err
+		}
+		defer source.Close()
+
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+
+		dest, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dest.Close()
+
+		_, err = io.Copy(dest, source)
+		return err
+	})
 }
 
 func (i *Image) Build() error {

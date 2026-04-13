@@ -2,6 +2,8 @@ package build
 
 import (
 	. "github.com/aandryashin/matchers"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -34,4 +36,30 @@ func TestParseVersion(t *testing.T) {
 	AssertThat(t, majorMinorVersion("78.0"), EqualTo{"78.0"})
 	AssertThat(t, buildVersion("78.0.3904.108"), EqualTo{"78.0.3904"})
 	AssertThat(t, buildVersion("78.0.3904"), EqualTo{"78.0.3904"})
+}
+
+func TestCopySourceFilesIncludesChromeDevtools(t *testing.T) {
+	withTmpDir(t, "chrome-source", func(t *testing.T, dir string) {
+		outputDir, err := copySourceFiles("chrome", dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := os.Stat(filepath.Join(outputDir, "devtools", "go.mod")); err != nil {
+			t.Fatalf("chrome devtools sources were not copied: %v", err)
+		}
+	})
+}
+
+func TestCopySourceFilesIncludesSafariPrism(t *testing.T) {
+	withTmpDir(t, "safari-source", func(t *testing.T, dir string) {
+		outputDir, err := copySourceFiles("safari", dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if _, err := os.Stat(filepath.Join(outputDir, "cmd", "prism", "go.mod")); err != nil {
+			t.Fatalf("safari prism sources were not copied: %v", err)
+		}
+	})
 }
